@@ -22,8 +22,8 @@ fi
 echo -e "${BLUE}[1/5] Pulling latest images...${NC}"
 docker-compose pull
 
-echo -e "${BLUE}[2/5] Building project JARs...${NC}"
-mvn clean install -DskipTests
+echo -e "${BLUE}[2/5] Building project JARs with custom settings...${NC}"
+mvn clean install --settings ./settings.xml -DskipTests
 
 echo -e "${BLUE}[3/5] Building services...${NC}"
 docker-compose build

@@ -7,7 +7,7 @@ spring:
 
 logging:
   level:
-    com.example.loadbalancer: DEBUG
+    com.degerli.loadbalancer: DEBUG
     root: INFO
 
 management:

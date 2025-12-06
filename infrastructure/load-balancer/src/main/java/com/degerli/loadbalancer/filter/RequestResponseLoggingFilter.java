@@ -9,7 +9,7 @@ import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -77,7 +77,7 @@ public class RequestResponseLoggingFilter implements Filter {
       Map<String, Object> logData = new LinkedHashMap<>();
       logData.put("type", "REQUEST");
       logData.put("requestId", requestId);
-      logData.put("timestamp", LocalDateTime.now());
+      logData.put("timestamp", Instant.now());
       logData.put("method", request.getMethod());
       logData.put("uri", request.getRequestURI());
       logData.put("queryString", request.getQueryString());
@@ -113,7 +113,7 @@ public class RequestResponseLoggingFilter implements Filter {
       Map<String, Object> logData = new LinkedHashMap<>();
       logData.put("type", "RESPONSE");
       logData.put("requestId", requestId);
-      logData.put("timestamp", LocalDateTime.now());
+      logData.put("timestamp", Instant.now());
       logData.put("status", response.getStatus());
       logData.put("durationMs", duration);
 
