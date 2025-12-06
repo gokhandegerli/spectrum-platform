@@ -1,29 +1,41 @@
-FROM eclipse-temurin:17-jdk-alpine AS builder
+# ========================================================
+# Dummy Service - Dockerfile for Spectrum Platform
+# Assumes the project has been built and JAR is available
+# ========================================================
 
-WORKDIR /app
+# Use Java 21 JRE for the runtime environment
+FROM eclipse-temurin:21-jre-alpine
 
-COPY mvnw .
-COPY .mvn .mvn
-COPY pom.xml .
+LABEL maintainer="Spectrum Platform"
+LABEL description="Dummy Service - Production Image"
 
-RUN ./mvnw dependency:go-offline -B
+# Add a non-root user for enhanced security
+RUN addgroup -S spring && adduser -S spring -G spring
 
-COPY src src
-
-RUN ./mvnw package -DskipTests
-
-FROM eclipse-temurin:17-jre-alpine
-
-WORKDIR /app
-
-# curl ekle (health check için)
+# Install curl, which is required for the health check
 RUN apk add --no-cache curl
 
-COPY --from=builder /app/target/*.jar app.jar
+WORKDIR /app
 
+# Copy the pre-built JAR file from the 'target' directory into the container.
+# The JAR file is expected to be created by 'mvn clean install' before building the image.
+COPY target/dummy-service-*.jar app.jar
+
+# Change the ownership of the application directory to the non-root user
+RUN chown -R spring:spring /app
+
+# Switch to the non-root user
+USER spring:spring
+
+# Expose the application port
+EXPOSE 8080
+
+# Health check to ensure the application is running correctly
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
   CMD curl -f http://localhost:8080/actuator/health || exit 1
 
-EXPOSE 8080
+# Set default JVM options for running in a containerized environment
+ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
 
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# The command to run the application
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]

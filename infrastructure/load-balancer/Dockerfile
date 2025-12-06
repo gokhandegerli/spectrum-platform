@@ -1,33 +1,41 @@
-FROM eclipse-temurin:17-jdk-alpine AS builder
+# ==========================================================
+# Load Balancer - Dockerfile for Spectrum Platform
+# Assumes the project has been built and JAR is available
+# ==========================================================
+
+# Use Java 21 JRE for the runtime environment
+FROM eclipse-temurin:21-jre-alpine
+
+LABEL maintainer="Spectrum Platform"
+LABEL description="Load Balancer - Production Image"
+
+# Add a non-root user for enhanced security
+RUN addgroup -S spring && adduser -S spring -G spring
+
+# Install curl, which is required for the health check
+RUN apk add --no-cache curl
 
 WORKDIR /app
 
-# Maven wrapper ve pom.xml'i kopyala
-COPY mvnw .
-COPY .mvn .mvn
-COPY pom.xml .
+# Copy the pre-built JAR file from the 'target' directory into the container.
+# The JAR file is expected to be created by 'mvn clean install' before building the image.
+COPY target/load-balancer-*.jar app.jar
 
-# Dependencies'i indir (cache için)
-RUN ./mvnw dependency:go-offline -B
+# Change the ownership of the application directory to the non-root user
+RUN chown -R spring:spring /app
 
-# Kaynak kodları kopyala
-COPY src src
+# Switch to the non-root user
+USER spring:spring
 
-# Build
-RUN ./mvnw package -DskipTests
-
-# Runtime image
-FROM eclipse-temurin:17-jre-alpine
-
-WORKDIR /app
-
-# JAR'ı kopyala
-COPY --from=builder /app/target/*.jar app.jar
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/actuator/health || exit 1
-
+# Expose the application port
 EXPOSE 8080
 
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# Health check to ensure the application is running correctly
+HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
+  CMD curl -f http://localhost:8080/actuator/health || exit 1
+
+# Set default JVM options for running in a containerized environment
+ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
+
+# The command to run the application
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]

@@ -22,6 +22,9 @@
         <java.version>21</java.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
+        <logstash-logback-encoder.version>9.0</logstash-logback-encoder.version>
+        <micrometer-tracing-bridge-brave.version>1.6.0</micrometer-tracing-bridge-brave.version>
+        <zipkin-reporter-brave.version>3.5.1</zipkin-reporter-brave.version>
     </properties>
 
     <modules>
@@ -29,5 +32,42 @@
         <module>services/dummy-service</module>
         <module>infrastructure/load-balancer</module>
     </modules>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- JSON Formatında Loglama için -->
+            <dependency>
+                <groupId>net.logstash.logback</groupId>
+                <artifactId>logstash-logback-encoder</artifactId>
+                <version>${logstash-logback-encoder.version}</version>
+            </dependency>
+
+            <!-- Otomatik Trace ID ve Span ID üretimi için (Micrometer Tracing) -->
+            <dependency>
+                <groupId>io.micrometer</groupId>
+                <artifactId>micrometer-tracing-bridge-brave</artifactId>
+                <version>${micrometer-tracing-bridge-brave.version}</version>
+            </dependency>
+
+            <!-- Üretilen Trace'leri bir sisteme gönderebilmek için (Zipkin/Jaeger vb.) -->
+            <dependency>
+                <groupId>io.zipkin.reporter2</groupId>
+                <artifactId>zipkin-reporter-brave</artifactId>
+                <version>${zipkin-reporter-brave.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <version>${project.parent.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
 
 </project>

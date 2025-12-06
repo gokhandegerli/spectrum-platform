@@ -3,6 +3,7 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
+
     <parent>
         <groupId>com.degerli</groupId>
         <artifactId>spectrum-platform</artifactId>
@@ -10,6 +11,7 @@
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
+    <artifactId>kisakes</artifactId>
     <name>kisakes</name>
     <description>URL Shortener project with Spring Boot</description>
 
@@ -34,7 +36,6 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
-
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-devtools</artifactId>
@@ -69,21 +70,18 @@
         <dependency>
             <groupId>net.logstash.logback</groupId>
             <artifactId>logstash-logback-encoder</artifactId>
-            <version>9.0</version>
         </dependency>
 
         <!-- Otomatik Trace ID ve Span ID üretimi için (Micrometer Tracing) -->
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-tracing-bridge-brave</artifactId>
-            <version>1.6.0</version>
         </dependency>
 
         <!-- Üretilen Trace'leri bir sisteme gönderebilmek için (Zipkin/Jaeger vb.) -->
         <dependency>
             <groupId>io.zipkin.reporter2</groupId>
             <artifactId>zipkin-reporter-brave</artifactId>
-            <version>3.5.1</version>
         </dependency>
     </dependencies>
 
