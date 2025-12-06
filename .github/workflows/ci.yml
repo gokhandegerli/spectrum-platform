@@ -26,30 +26,31 @@ jobs:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
 
-      - name: ☕ Set up JDK 17
+      - name: ☕ Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: '21'
           distribution: 'temurin'
           cache: maven
 
-      - name: 🔨 Build ${{ matrix.service }}
+      - name: 📁 Determine service path
+        id: path
         run: |
           if [ -d "infrastructure/${{ matrix.service }}" ]; then
-            cd infrastructure/${{ matrix.service }}
+            echo "dir=infrastructure/${{ matrix.service }}" >> $GITHUB_OUTPUT
           else
-            cd services/${{ matrix.service }}
+            echo "dir=services/${{ matrix.service }}" >> $GITHUB_OUTPUT
           fi
-          ./mvnw clean package -DskipTests
+
+      - name: 🔨 Build ${{ matrix.service }}
+        run: |
+          cd ${{ steps.path.outputs.dir }}
+          ../../mvnw clean package -DskipTests
 
       - name: 🧪 Run tests
         run: |
-          if [ -d "infrastructure/${{ matrix.service }}" ]; then
-            cd infrastructure/${{ matrix.service }}
-          else
-            cd services/${{ matrix.service }}
-          fi
-          ./mvnw test
+          cd ${{ steps.path.outputs.dir }}
+          ../../mvnw test
 
       - name: 📊 Upload test results
         if: always()
@@ -81,6 +82,15 @@ jobs:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
 
+      - name: 📁 Determine service path
+        id: path
+        run: |
+          if [ -d "infrastructure/${{ matrix.service }}" ]; then
+            echo "dir=infrastructure/${{ matrix.service }}" >> $GITHUB_OUTPUT
+          else
+            echo "dir=services/${{ matrix.service }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: 🐳 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -106,7 +116,7 @@ jobs:
       - name: 🏗️ Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: infrastructure/${{ matrix.service }} || services/${{ matrix.service }}
+          context: ${{ steps.path.outputs.dir }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -141,8 +151,15 @@ jobs:
 
       - name: 🧪 Run integration tests
         run: |
-          chmod +x scripts/test-loadbalancer.sh
-          ./scripts/test-loadbalancer.sh
+          # Basic load balancer tests
+          curl -f http://localhost:8080/actuator/health
+          curl -f http://localhost:8080/admin/status
+          
+          # Test kisakes service
+          curl -f http://localhost:8080/kisakes/actuator/health
+          
+          # Test dummy service
+          curl -f http://localhost:8080/dummy-service/hello
 
       - name: 📊 Show logs on failure
         if: failure()
@@ -189,14 +206,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: ☕ Set up JDK 17
+      - name: ☕ Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: '21'
           distribution: 'temurin'
 
       - name: 📊 SonarCloud Scan
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && env.SONAR_TOKEN != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -217,7 +234,7 @@ jobs:
     steps:
       - name: 📧 Send notification
         uses: 8398a7/action-slack@v3
-        if: always()
+        if: always() && env.SLACK_WEBHOOK != ''
         with:
           status: ${{ job.status }}
           text: 'Spectrum Platform CI/CD Pipeline: ${{ job.status }}'

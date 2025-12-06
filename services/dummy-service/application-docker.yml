@@ -1,0 +1,32 @@
+# =====================================================
+# Dummy Service - Docker Profile Configuration
+# =====================================================
+
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: dummy-service
+
+# Actuator Configuration
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+
+# Logging Configuration
+logging:
+  level:
+    com.degerli.dummyservice: INFO
+    org.springframework.web: INFO

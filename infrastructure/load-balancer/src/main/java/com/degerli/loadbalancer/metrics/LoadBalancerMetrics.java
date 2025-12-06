@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Prometheus formatında metrics export
+ * Percentiles (P50, P95, P99) ile geliştirilmiş
  */
 @Component
 @RequiredArgsConstructor
@@ -27,12 +28,11 @@ public class LoadBalancerMetrics {
   private final ConcurrentMap<String, Counter> requestCounters = new ConcurrentHashMap<>();
   private final ConcurrentMap<String, Counter> errorCounters = new ConcurrentHashMap<>();
 
-  // Timers
+  // Timers with percentiles
   private final ConcurrentMap<String, Timer> requestTimers = new ConcurrentHashMap<>();
 
   @PostConstruct
   public void initMetrics() {
-    // Her servis için metrikler
     serviceRegistry.getServiceNames().forEach(serviceName -> {
       // Request counter
       requestCounters.put(serviceName, Counter.builder("loadbalancer.requests.total")
@@ -46,10 +46,14 @@ public class LoadBalancerMetrics {
           .description("Total number of errors")
           .register(meterRegistry));
 
-      // Request timer
+      // Request timer with percentiles
       requestTimers.put(serviceName, Timer.builder("loadbalancer.request.duration")
           .tag("service", serviceName)
           .description("Request duration in seconds")
+          .publishPercentiles(0.5, 0.95, 0.99)  // P50, P95, P99
+          .publishPercentileHistogram()
+          .minimumExpectedValue(java.time.Duration.ofMillis(1))
+          .maximumExpectedValue(java.time.Duration.ofSeconds(10))
           .register(meterRegistry));
 
       // Server health gauges
@@ -67,7 +71,7 @@ public class LoadBalancerMetrics {
         Gauge.builder("loadbalancer.server.health", server, s -> s.isHealthy() ? 1.0 : 0.0)
             .tag("service", serviceName)
             .tag("server", server.getUrl())
-            .description("Server health status")
+            .description("Server health status (1=healthy, 0=unhealthy)")
             .register(meterRegistry);
 
         // Total requests
@@ -92,6 +96,20 @@ public class LoadBalancerMetrics {
             .tag("service", serviceName)
             .tag("server", server.getUrl())
             .description("Average response time in milliseconds")
+            .register(meterRegistry);
+
+        // Success rate
+        Gauge.builder("loadbalancer.server.success.rate", server, s -> {
+              long total = s.getTotalRequests().get();
+              long failed = s.getFailedRequests().get();
+              if (total == 0) {
+                return 1.0;
+              }
+              return (double) (total - failed) / total;
+            })
+            .tag("service", serviceName)
+            .tag("server", server.getUrl())
+            .description("Success rate (0.0 to 1.0)")
             .register(meterRegistry);
       });
     });
@@ -124,20 +142,20 @@ public class LoadBalancerMetrics {
 }
 
 /**
- * Prometheus endpoint: http://localhost:8080/actuator/prometheus
- * <p>
- * Örnek metrikler:
- * <p>
- * # HELP loadbalancer_requests_total Total number of requests
- * # TYPE loadbalancer_requests_total counter
- * loadbalancer_requests_total{service="service1"} 1523.0
- * <p>
- * # HELP loadbalancer_server_health Server health status
- * # TYPE loadbalancer_server_health gauge
- * loadbalancer_server_health{service="service1",server="http://service1-pod1:8080"} 1.0
- * <p>
- * # HELP loadbalancer_request_duration_seconds Request duration
- * # TYPE loadbalancer_request_duration_seconds summary
- * loadbalancer_request_duration_seconds_count{service="service1"} 1523.0
- * loadbalancer_request_duration_seconds_sum{service="service1"} 45.234
+ * Prometheus Queries:
+ *
+ * # P95 response time
+ * loadbalancer_request_duration_seconds{quantile="0.95",service="kisakes"}
+ *
+ * # P99 response time
+ * loadbalancer_request_duration_seconds{quantile="0.99",service="kisakes"}
+ *
+ * # Error rate (%)
+ * (rate(loadbalancer_errors_total[5m]) / rate(loadbalancer_requests_total[5m])) * 100
+ *
+ * # Success rate (%)
+ * (1 - (rate(loadbalancer_errors_total[5m]) / rate(loadbalancer_requests_total[5m]))) * 100
+ *
+ * # Average response time (ms)
+ * rate(loadbalancer_request_duration_seconds_sum[5m]) / rate(loadbalancer_request_duration_seconds_count[5m]) * 1000
  */

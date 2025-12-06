@@ -12,6 +12,7 @@ import org.springframework.web.client.RestTemplate;
 
 /**
  * Backend servislerin sağlık kontrolünü yapar
+ * Retry mechanism ile geliştirilmiş versiyon
  */
 @Slf4j
 @Component
@@ -20,6 +21,10 @@ public class HealthChecker {
   private final RestTemplate restTemplate;
   private final LoadBalancerProperties properties;
   private final ScheduledExecutorService scheduler;
+
+  // Retry configuration
+  private static final int MAX_RETRIES = 3;
+  private static final long RETRY_DELAY_MS = 100;
 
   public HealthChecker(LoadBalancerProperties properties) {
     this.properties = properties;
@@ -43,10 +48,10 @@ public class HealthChecker {
     }
 
     // İlk check hemen yap
-    checkHealth(server);
+    checkHealthWithRetry(server);
 
     // Periyodik check başlat
-    scheduler.scheduleAtFixedRate(() -> checkHealth(server),
+    scheduler.scheduleAtFixedRate(() -> checkHealthWithRetry(server),
         properties.getHealthCheckInterval(), properties.getHealthCheckInterval(),
         TimeUnit.MILLISECONDS);
 
@@ -55,41 +60,69 @@ public class HealthChecker {
   }
 
   /**
-   * Bir server için health check yap
+   * Retry mechanism ile health check
    */
-  private void checkHealth(Server server) {
-    try {
-      long startTime = System.currentTimeMillis();
+  private void checkHealthWithRetry(Server server) {
+    int attempt = 0;
+    boolean success = false;
+    Exception lastException = null;
 
-      // /actuator/health endpoint'ini kontrol et
-      String healthUrl = server.getUrl() + "/actuator/health";
-      String response = restTemplate.getForObject(healthUrl, String.class);
+    while (attempt < MAX_RETRIES && !success) {
+      attempt++;
+      try {
+        long startTime = System.currentTimeMillis();
 
-      long responseTime = System.currentTimeMillis() - startTime;
+        String healthUrl = server.getUrl() + "/actuator/health";
+        String response = restTemplate.getForObject(healthUrl, String.class);
 
-      boolean wasHealthy = server.isHealthy();
-      server.setHealthy(true);
-      server.setLastHealthCheck(LocalDateTime.now());
-      server.updateResponseTime(responseTime);
+        long responseTime = System.currentTimeMillis() - startTime;
 
-      if (!wasHealthy) {
-        log.info("✓ Server recovered: {} (response time: {}ms)", server.getUrl(),
-            responseTime);
-      } else {
-        log.debug("✓ Health check OK: {} (response time: {}ms)", server.getUrl(),
-            responseTime);
+        boolean wasHealthy = server.isHealthy();
+        server.setHealthy(true);
+        server.setLastHealthCheck(LocalDateTime.now());
+        server.updateResponseTime(responseTime);
+
+        if (!wasHealthy) {
+          log.info("✓ Server recovered: {} (response time: {}ms, attempt: {}/{})",
+              server.getUrl(), responseTime, attempt, MAX_RETRIES);
+        } else {
+          log.debug("✓ Health check OK: {} (response time: {}ms)", server.getUrl(),
+              responseTime);
+        }
+
+        success = true;
+
+      } catch (Exception e) {
+        lastException = e;
+
+        if (attempt < MAX_RETRIES) {
+          try {
+            long delay = RETRY_DELAY_MS * attempt;
+            log.debug("Health check failed for {}, retrying in {}ms (attempt {}/{})",
+                server.getUrl(), delay, attempt, MAX_RETRIES);
+            Thread.sleep(delay);
+          } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            break;
+          }
+        }
       }
+    }
 
-    } catch (Exception e) {
+    if (!success) {
       boolean wasHealthy = server.isHealthy();
       server.setHealthy(false);
       server.setLastHealthCheck(LocalDateTime.now());
       server.recordFailure();
 
       if (wasHealthy) {
-        log.error("✗ Server became unhealthy: {} - {}", server.getUrl(), e.getMessage());
+        log.error("✗ Server became unhealthy after {} attempts: {} - {}",
+            MAX_RETRIES, server.getUrl(),
+            lastException != null ? lastException.getMessage() : "Unknown error");
       } else {
-        log.debug("✗ Health check failed: {} - {}", server.getUrl(), e.getMessage());
+        log.debug("✗ Health check failed after {} attempts: {} - {}", MAX_RETRIES,
+            server.getUrl(),
+            lastException != null ? lastException.getMessage() : "Unknown error");
       }
     }
   }

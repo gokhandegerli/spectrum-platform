@@ -1,0 +1,58 @@
+# =====================================================
+# Kisakes Service - Test Profile Configuration
+# For integration and unit tests
+# =====================================================
+
+spring:
+  application:
+    name: kisakes-test
+
+  # H2 In-Memory Database for tests
+  datasource:
+    url: jdbc:h2:mem:testdb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+
+  # JPA Configuration
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: false
+
+  # Disable Liquibase for tests
+  liquibase:
+    enabled: false
+
+  # Redis - Use embedded or mock
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 1000ms
+
+  # Cache - Use simple cache for tests
+  cache:
+    type: simple
+
+# Logging
+logging:
+  level:
+    com.degerli.kisakes: DEBUG
+    org.springframework.web: WARN
+    org.hibernate: WARN
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

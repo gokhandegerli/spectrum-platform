@@ -5,11 +5,12 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Circuit Breaker Pattern Implementation
+ * Thread-Safe Circuit Breaker Pattern Implementation
  * <p>
  * States:
  * - CLOSED: Normal operation, requests go through
@@ -22,10 +23,10 @@ public class CircuitBreaker {
   private final Map<Server, CircuitState> serverStates = new ConcurrentHashMap<>();
 
   // Configuration
-  private final int failureThreshold;      // Kaç hata sonrası OPEN olsun
-  private final int successThreshold;      // HALF_OPEN'da kaç başarı sonrası CLOSED olsun
-  private final Duration timeout;          // OPEN'dan HALF_OPEN'a geçiş süresi
-  private final Duration resetTimeout;     // Hata sayacını sıfırlama süresi
+  private final int failureThreshold;
+  private final int successThreshold;
+  private final Duration timeout;
+  private final Duration resetTimeout;
 
   public CircuitBreaker(int failureThreshold, int successThreshold, Duration timeout,
       Duration resetTimeout) {
@@ -47,8 +48,7 @@ public class CircuitBreaker {
 
       case OPEN:
         // Timeout geçtiyse HALF_OPEN'a geç
-        if (Duration.between(state.getOpenedAt(), LocalDateTime.now()).compareTo(timeout)
-            > 0) {
+        if (Duration.between(state.getOpenedAt(), LocalDateTime.now()).compareTo(timeout) > 0) {
           log.info("Circuit breaker transitioning to HALF_OPEN: {}", server.getUrl());
           state.transitionToHalfOpen();
           return true;
@@ -73,8 +73,7 @@ public class CircuitBreaker {
       case HALF_OPEN:
         state.incrementSuccess();
         if (state.getConsecutiveSuccesses() >= successThreshold) {
-          log.info("✓ Circuit breaker recovered, transitioning to CLOSED: {}",
-              server.getUrl());
+          log.info("✓ Circuit breaker recovered, transitioning to CLOSED: {}", server.getUrl());
           state.transitionToClosed();
         }
         break;
@@ -106,8 +105,7 @@ public class CircuitBreaker {
         break;
 
       case HALF_OPEN:
-        log.warn("Circuit breaker failed in HALF_OPEN, returning to OPEN: {}",
-            server.getUrl());
+        log.warn("Circuit breaker failed in HALF_OPEN, returning to OPEN: {}", server.getUrl());
         state.transitionToOpen();
         break;
     }
@@ -128,53 +126,61 @@ public class CircuitBreaker {
   }
 
   /**
-   * Circuit Breaker State
+   * Thread-Safe Circuit Breaker State
    */
   @Getter
   private static class CircuitState {
-    private State state = State.CLOSED;
-    private int consecutiveFailures = 0;
-    private int consecutiveSuccesses = 0;
-    private LocalDateTime openedAt;
-    private LocalDateTime lastFailureTime = LocalDateTime.now();
+    private volatile State state = State.CLOSED;
+    private final AtomicInteger consecutiveFailures = new AtomicInteger(0);
+    private final AtomicInteger consecutiveSuccesses = new AtomicInteger(0);
+    private volatile LocalDateTime openedAt;
+    private volatile LocalDateTime lastFailureTime = LocalDateTime.now();
 
-    void transitionToOpen() {
+    synchronized void transitionToOpen() {
       this.state = State.OPEN;
       this.openedAt = LocalDateTime.now();
-      this.consecutiveSuccesses = 0;
+      this.consecutiveSuccesses.set(0);
     }
 
-    void transitionToHalfOpen() {
+    synchronized void transitionToHalfOpen() {
       this.state = State.HALF_OPEN;
-      this.consecutiveSuccesses = 0;
-      this.consecutiveFailures = 0;
+      this.consecutiveSuccesses.set(0);
+      this.consecutiveFailures.set(0);
     }
 
-    void transitionToClosed() {
+    synchronized void transitionToClosed() {
       this.state = State.CLOSED;
-      this.consecutiveFailures = 0;
-      this.consecutiveSuccesses = 0;
+      this.consecutiveFailures.set(0);
+      this.consecutiveSuccesses.set(0);
     }
 
     void incrementFailure() {
-      this.consecutiveFailures++;
-      this.consecutiveSuccesses = 0;
+      this.consecutiveFailures.incrementAndGet();
+      this.consecutiveSuccesses.set(0);
       this.lastFailureTime = LocalDateTime.now();
     }
 
     void incrementSuccess() {
-      this.consecutiveSuccesses++;
-      this.consecutiveFailures = 0;
+      this.consecutiveSuccesses.incrementAndGet();
+      this.consecutiveFailures.set(0);
     }
 
     void resetFailures() {
-      this.consecutiveFailures = 0;
+      this.consecutiveFailures.set(0);
+    }
+
+    int getConsecutiveFailures() {
+      return consecutiveFailures.get();
+    }
+
+    int getConsecutiveSuccesses() {
+      return consecutiveSuccesses.get();
     }
   }
 
   public enum State {
-    CLOSED,      // Normal işlem
-    OPEN,        // Bloklanmış
-    HALF_OPEN    // Test ediliyor
+    CLOSED,
+    OPEN,
+    HALF_OPEN
   }
 }

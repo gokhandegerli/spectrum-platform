@@ -1,9 +1,33 @@
 # =====================================================
 # Kisakes Service - Dockerfile for Spectrum Platform
-# Assumes the project has been built and JAR is available
+# Multi-stage build for optimal image size
 # =====================================================
 
-# Use Java 21 JRE for the runtime environment
+# Build stage
+FROM eclipse-temurin:21-jdk-alpine AS builder
+
+LABEL maintainer="Spectrum Platform"
+LABEL stage="builder"
+
+WORKDIR /build
+
+# Copy Maven wrapper and pom.xml first (for layer caching)
+COPY .mvn .mvn
+COPY mvnw .
+COPY pom.xml .
+
+# Download dependencies (cached layer)
+RUN ./mvnw dependency:go-offline -B
+
+# Copy source code
+COPY src ./src
+
+# Build the application
+RUN ./mvnw clean package -DskipTests -B
+
+# =====================================================
+# Runtime stage
+# =====================================================
 FROM eclipse-temurin:21-jre-alpine
 
 LABEL maintainer="Spectrum Platform"
@@ -13,30 +37,29 @@ LABEL version="1.0.0"
 # Add a non-root user for enhanced security
 RUN addgroup -S spring && adduser -S spring -G spring
 
-# Install curl, which is required for the health check
+# Install curl for health checks
 RUN apk add --no-cache curl
 
 WORKDIR /app
 
-# Copy the pre-built JAR file from the 'target' directory into the container.
-# The JAR file is expected to be created by 'mvn clean install' before building the image.
-COPY target/kisakes-*.jar app.jar
+# Copy the built JAR from builder stage
+COPY --from=builder /build/target/kisakes-*.jar app.jar
 
-# Change the ownership of the application directory to the non-root user
+# Change ownership
 RUN chown -R spring:spring /app
 
-# Switch to the non-root user
+# Switch to non-root user
 USER spring:spring
 
 # Expose the application port (can be overridden by SERVER_PORT env var)
 EXPOSE 8080
 
-# Health check to ensure the application is running correctly
+# Health check with dynamic port support
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
   CMD curl -f http://localhost:${SERVER_PORT:-8080}/actuator/health || exit 1
 
-# Set default JVM options for running in a containerized environment
-ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
+# Set default JVM options for containerized environment
+ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
 
-# The command to run the application
+# Run the application
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
