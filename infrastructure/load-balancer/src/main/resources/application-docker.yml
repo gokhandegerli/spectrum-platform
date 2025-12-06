@@ -55,19 +55,21 @@ loadbalancer:
     enabled: false
 
   # =================================================
-  # Service Definitions with CORRECT hostnames
+  # Service Definitions with CORRECT hostnames & ports
   # =================================================
   services:
     # Kisakes Service
     kisakes:
       algorithm: ROUND_ROBIN
       upstreams:
+        # Hostname: kisakes-app-1, Port: 8081 (docker-compose environment ile set edildi)
         - url: http://kisakes-app-1:8081
         - url: http://kisakes-app-2:8082
 
     # Dummy Service
     dummy-service:
-      algorithm: ROUND_ROBIN # Was WEIGHTED_ROUND_ROBIN, changed for simplicity
+      algorithm: ROUND_ROBIN
       upstreams:
+        # Hostname: dummy-service-1, Port: 8083
         - url: http://dummy-service-1:8083
         - url: http://dummy-service-2:8084

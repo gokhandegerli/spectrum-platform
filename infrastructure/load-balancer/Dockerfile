@@ -1,40 +1,40 @@
 # ==========================================================
-# Load Balancer - Dockerfile for Spectrum Platform
-# Multi-stage build for optimal image size
+# Load Balancer - Dockerfile
 # ==========================================================
 
-# Build stage
-FROM eclipse-temurin:21-jdk-alpine AS builder
+# ----------------------------------------------------------
+# Stage 1: Builder
+# ----------------------------------------------------------
+FROM eclipse-temurin:21-jdk-alpine as builder
+WORKDIR /app
 
-LABEL maintainer="Spectrum Platform"
-LABEL stage="builder"
-
-WORKDIR /build
-
-# Copy Maven wrapper and pom.xml first (for layer caching)
-COPY .mvn .mvn
+# 1. Maven Wrapper ve Ana POM'u kopyala
+COPY .mvn/ .mvn
 COPY mvnw .
 COPY pom.xml .
 
-# Download dependencies (cached layer)
-RUN ./mvnw dependency:go-offline -B
+# 2. Servisin POM dosyasını KENDİ YERİNE kopyala
+COPY infrastructure/load-balancer/pom.xml infrastructure/load-balancer/
 
-# Copy source code
-COPY src ./src
+# 3. Bağımlılıkları indir
+WORKDIR /app/infrastructure/load-balancer
+RUN ../../mvnw dependency:go-offline -B
 
-# Build the application
-RUN ./mvnw clean package -DskipTests -B
+# 4. Kaynak kodları kopyala
+COPY infrastructure/load-balancer/src src
 
-# ==========================================================
-# Runtime stage
-# ==========================================================
+# 5. Build al
+RUN ../../mvnw package -DskipTests
+
+# ----------------------------------------------------------
+# Stage 2: Runtime
+# ----------------------------------------------------------
 FROM eclipse-temurin:21-jre-alpine
 
 LABEL maintainer="Spectrum Platform"
 LABEL description="Load Balancer - Production Image"
-LABEL version="1.0.0"
 
-# Add a non-root user for enhanced security
+# Add a non-root user
 RUN addgroup -S spring && adduser -S spring -G spring
 
 # Install curl for health checks
@@ -43,7 +43,8 @@ RUN apk add --no-cache curl
 WORKDIR /app
 
 # Copy the built JAR from builder stage
-COPY --from=builder /build/target/load-balancer-*.jar app.jar
+# DİKKAT: Yol builder'daki WORKDIR yapısına göre ayarlandı
+COPY --from=builder /app/infrastructure/load-balancer/target/load-balancer-*.jar app.jar
 
 # Change ownership
 RUN chown -R spring:spring /app
@@ -59,8 +60,8 @@ EXPOSE 8443
 HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
   CMD curl -f http://localhost:8080/actuator/health || exit 1
 
-# Set default JVM options for containerized environment
-ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
+# JVM options
+ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
 
-# Run the application
+# Run
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]

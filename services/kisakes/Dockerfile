@@ -1,65 +1,65 @@
-# =====================================================
-# Kisakes Service - Dockerfile for Spectrum Platform
-# Multi-stage build for optimal image size
-# =====================================================
+# ==========================================================
+# Kisakes Service - Dockerfile
+# ==========================================================
 
-# Build stage
-FROM eclipse-temurin:21-jdk-alpine AS builder
+# ----------------------------------------------------------
+# Stage 1: Builder
+# ----------------------------------------------------------
+FROM eclipse-temurin:21-jdk-alpine as builder
+WORKDIR /app
 
-LABEL maintainer="Spectrum Platform"
-LABEL stage="builder"
-
-WORKDIR /build
-
-# Copy Maven wrapper and pom.xml first (for layer caching)
-COPY .mvn .mvn
+# 1. Maven Wrapper ve Ana POM'u kopyala (Root Context)
+COPY .mvn/ .mvn
 COPY mvnw .
 COPY pom.xml .
 
-# Download dependencies (cached layer)
-RUN ./mvnw dependency:go-offline -B
+# 2. Servisin POM dosyasını kendi klasör yapısına kopyala
+COPY services/kisakes/pom.xml services/kisakes/
 
-# Copy source code
-COPY src ./src
+# 3. Bağımlılıkları indir
+# Çalışma dizinini servisin içine alıyoruz ki parent'ı ../../pom.xml olarak görebilsin
+WORKDIR /app/services/kisakes
+RUN ../../mvnw dependency:go-offline -B
 
-# Build the application
-RUN ./mvnw clean package -DskipTests -B
+# 4. Kaynak kodları kopyala
+COPY services/kisakes/src src
 
-# =====================================================
-# Runtime stage
-# =====================================================
+# 5. Build al
+RUN ../../mvnw package -DskipTests
+
+# ----------------------------------------------------------
+# Stage 2: Runtime
+# ----------------------------------------------------------
 FROM eclipse-temurin:21-jre-alpine
 
 LABEL maintainer="Spectrum Platform"
-LABEL description="Kisakes Service - Production Image"
-LABEL version="1.0.0"
+LABEL service="kisakes"
 
-# Add a non-root user for enhanced security
+# Güvenlik için kullanıcı oluştur
 RUN addgroup -S spring && adduser -S spring -G spring
 
-# Install curl for health checks
+# Health check için curl
 RUN apk add --no-cache curl
 
 WORKDIR /app
 
-# Copy the built JAR from builder stage
-COPY --from=builder /build/target/kisakes-*.jar app.jar
+# Builder aşamasından JAR dosyasını al
+# DİKKAT: Yol, builder aşamasındaki WORKDIR yapısına göre ayarlandı
+COPY --from=builder /app/services/kisakes/target/kisakes-*.jar app.jar
 
-# Change ownership
+# İzinleri ayarla
 RUN chown -R spring:spring /app
 
-# Switch to non-root user
 USER spring:spring
 
-# Expose the application port (can be overridden by SERVER_PORT env var)
+# Port
 EXPOSE 8080
 
-# Health check with dynamic port support
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:${SERVER_PORT:-8080}/actuator/health || exit 1
+# Health Check
+HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
+  CMD curl -f http://localhost:8080/actuator/health || exit 1
 
-# Set default JVM options for containerized environment
-ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
+# JVM Ayarları
+ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
 
-# Run the application
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
