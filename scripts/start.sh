@@ -3,9 +3,9 @@
 # Start all services
 set -e
 
-echo "================================"
+echo "================================="
 echo "Starting Microservices Platform"
-echo "================================"
+echo "================================="
 echo ""
 
 GREEN='\033[0;32m'
@@ -19,16 +19,19 @@ if [ ! -f .env ]; then
     ./scripts/setup.sh
 fi
 
-echo -e "${BLUE}[1/4] Pulling latest images...${NC}"
+echo -e "${BLUE}[1/5] Pulling latest images...${NC}"
 docker-compose pull
 
-echo -e "${BLUE}[2/4] Building services...${NC}"
+echo -e "${BLUE}[2/5] Building project JARs...${NC}"
+mvn clean install -DskipTests
+
+echo -e "${BLUE}[3/5] Building services...${NC}"
 docker-compose build
 
-echo -e "${BLUE}[3/4] Starting services...${NC}"
+echo -e "${BLUE}[4/5] Starting services...${NC}"
 docker-compose up -d
 
-echo -e "${BLUE}[4/4] Waiting for services to be healthy...${NC}"
+echo -e "${BLUE}[5/5] Waiting for services to be healthy...${NC}"
 echo "This may take a few minutes..."
 
 # Wait for services
