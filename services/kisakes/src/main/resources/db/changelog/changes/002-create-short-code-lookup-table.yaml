@@ -1,0 +1,17 @@
+databaseChangeLog:
+  - changeSet:
+      id: 002-create-short-code-lookup-table
+      author: gokhan d.
+      changes:
+        - createTable:
+            tableName: short_code_lookup
+            columns:
+              - column:
+                  name: short_code
+                  type: VARCHAR(10)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+      rollback:
+        - dropTable:
+            tableName: short_code_lookup

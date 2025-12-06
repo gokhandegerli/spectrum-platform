@@ -1,0 +1,13 @@
+.env
+.env.local
+*.log
+target/
+.idea/
+*.iml
+.vscode/
+.DS_Store
+postgres_data/
+redis_data/
+grafana_data/
+loki_data/
+prometheus_data/

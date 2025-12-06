@@ -1,0 +1,226 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: spectrum-platform
+
+jobs:
+  # ============================================
+  # Build and Test
+  # ============================================
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        service: [load-balancer, kisakes, dummy-service]
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: ☕ Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: 🔨 Build ${{ matrix.service }}
+        run: |
+          if [ -d "infrastructure/${{ matrix.service }}" ]; then
+            cd infrastructure/${{ matrix.service }}
+          else
+            cd services/${{ matrix.service }}
+          fi
+          ./mvnw clean package -DskipTests
+
+      - name: 🧪 Run tests
+        run: |
+          if [ -d "infrastructure/${{ matrix.service }}" ]; then
+            cd infrastructure/${{ matrix.service }}
+          else
+            cd services/${{ matrix.service }}
+          fi
+          ./mvnw test
+
+      - name: 📊 Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.service }}
+          path: '**/target/surefire-reports/*.xml'
+
+      - name: 📦 Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.service }}-jar
+          path: '**/target/*.jar'
+
+  # ============================================
+  # Docker Build
+  # ============================================
+  docker-build:
+    name: Docker Build
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    strategy:
+      matrix:
+        service: [load-balancer, kisakes, dummy-service]
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐳 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🔐 Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📝 Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+
+      - name: 🏗️ Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: infrastructure/${{ matrix.service }} || services/${{ matrix.service }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================
+  # Integration Tests
+  # ============================================
+  integration-test:
+    name: Integration Tests
+    needs: build-and-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐳 Set up Docker Compose
+        run: |
+          docker-compose version
+
+      - name: 🚀 Start services
+        run: |
+          cp .env.example .env
+          docker-compose up -d
+
+      - name: ⏳ Wait for services
+        run: |
+          chmod +x scripts/health-check.sh
+          timeout 300 bash -c 'until ./scripts/health-check.sh; do sleep 10; done'
+
+      - name: 🧪 Run integration tests
+        run: |
+          chmod +x scripts/test-loadbalancer.sh
+          ./scripts/test-loadbalancer.sh
+
+      - name: 📊 Show logs on failure
+        if: failure()
+        run: docker-compose logs
+
+      - name: 🛑 Cleanup
+        if: always()
+        run: docker-compose down -v
+
+  # ============================================
+  # Security Scan
+  # ============================================
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔍 Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: 📤 Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # ============================================
+  # Code Quality
+  # ============================================
+  code-quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: ☕ Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: 📊 SonarCloud Scan
+        if: github.event_name == 'push'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          ./mvnw -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+            -Dsonar.projectKey=spectrum-platform \
+            -Dsonar.organization=your-org
+
+  # ============================================
+  # Notification
+  # ============================================
+  notify:
+    name: Notify Results
+    needs: [build-and-test, integration-test, security-scan]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: 📧 Send notification
+        uses: 8398a7/action-slack@v3
+        if: always()
+        with:
+          status: ${{ job.status }}
+          text: 'Spectrum Platform CI/CD Pipeline: ${{ job.status }}'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}

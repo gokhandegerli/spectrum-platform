@@ -1,0 +1,347 @@
+version: '3.8'
+
+# Global Networks
+networks:
+  microservices-net:
+    driver: bridge
+    name: microservices-net
+
+# Global Volumes
+volumes:
+  postgres_data:
+    name: postgres_data
+  grafana_data:
+    name: grafana_data
+  loki_data:
+    name: loki_data
+  redis_data:
+    name: redis_data
+  prometheus_data:
+    name: prometheus_data
+
+services:
+  # ============================================
+  # INFRASTRUCTURE LAYER
+  # ============================================
+
+  # Load Balancer (Reverse Proxy)
+  load-balancer:
+    build:
+      context: ./infrastructure/load-balancer
+      dockerfile: Dockerfile
+    container_name: load-balancer
+    hostname: load-balancer
+    ports:
+      - "8080:8080"   # HTTP
+      - "8443:8443"   # HTTPS (if SSL enabled)
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - LOGGING_LEVEL_ROOT=INFO
+    networks:
+      - microservices-net
+    depends_on:
+      - kisakes-app-1
+      - kisakes-app-2
+      - dummy-service-1
+      - dummy-service-2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    labels:
+      - "logging=json"
+      - "service=load-balancer"
+
+  # ============================================
+  # DATA LAYER
+  # ============================================
+
+  postgres-db:
+    image: postgres:16-alpine
+    container_name: postgres-db
+    hostname: postgres-db
+    networks:
+      - microservices-net
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-microservices_db}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin123}
+      # Multiple databases için init script
+      POSTGRES_MULTIPLE_DATABASES: kisakes,dummydb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/databases/postgres/init-scripts:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    labels:
+      - "service=postgres"
+
+  redis-cache:
+    image: redis:7-alpine
+    container_name: redis-cache
+    hostname: redis-cache
+    networks:
+      - microservices-net
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    labels:
+      - "service=redis"
+
+  # ============================================
+  # SERVICES LAYER - Kisakes Service
+  # ============================================
+
+  kisakes-app-1:
+    build:
+      context: ./services/kisakes
+      dockerfile: Dockerfile
+    container_name: kisakes-app-1
+    hostname: kisakes-app-1
+    networks:
+      - microservices-net
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+    expose:
+      - "8081"
+    environment:
+      - SERVER_PORT=8081
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_APPLICATION_NAME=kisakes
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-db:5432/kisakes
+      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER:-admin}
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD:-admin123}
+      - REDIS_HOST=redis-cache
+      - REDIS_PORT=6379
+      - SPRING_LIQUIBASE_ENABLED=true
+      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics,prometheus
+      - MANAGEMENT_TRACING_ENABLED=true
+      - LOGGING_LEVEL_ROOT=INFO
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      - "logging=json"
+      - "service=kisakes"
+      - "instance=1"
+
+  kisakes-app-2:
+    build:
+      context: ./services/kisakes
+      dockerfile: Dockerfile
+    container_name: kisakes-app-2
+    hostname: kisakes-app-2
+    networks:
+      - microservices-net
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+    expose:
+      - "8082"
+    environment:
+      - SERVER_PORT=8082
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_APPLICATION_NAME=kisakes
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-db:5432/kisakes
+      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER:-admin}
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD:-admin123}
+      - REDIS_HOST=redis-cache
+      - REDIS_PORT=6379
+      - SPRING_LIQUIBASE_ENABLED=true
+      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics,prometheus
+      - MANAGEMENT_TRACING_ENABLED=true
+      - LOGGING_LEVEL_ROOT=INFO
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      - "logging=json"
+      - "service=kisakes"
+      - "instance=2"
+
+  # ============================================
+  # SERVICES LAYER - Dummy Service
+  # ============================================
+
+  dummy-service-1:
+    build:
+      context: ./services/dummy-service
+      dockerfile: Dockerfile
+    container_name: dummy-service-1
+    hostname: dummy-service-1
+    networks:
+      - microservices-net
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+    expose:
+      - "8083"
+    environment:
+      - SERVER_PORT=8083
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_APPLICATION_NAME=dummy-service
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-db:5432/dummydb
+      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER:-admin}
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD:-admin123}
+      - REDIS_HOST=redis-cache
+      - REDIS_PORT=6379
+      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics,prometheus
+      - LOGGING_LEVEL_ROOT=INFO
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      - "logging=json"
+      - "service=dummy-service"
+      - "instance=1"
+
+  dummy-service-2:
+    build:
+      context: ./services/dummy-service
+      dockerfile: Dockerfile
+    container_name: dummy-service-2
+    hostname: dummy-service-2
+    networks:
+      - microservices-net
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+    expose:
+      - "8084"
+    environment:
+      - SERVER_PORT=8084
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_APPLICATION_NAME=dummy-service
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-db:5432/dummydb
+      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER:-admin}
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD:-admin123}
+      - REDIS_HOST=redis-cache
+      - REDIS_PORT=6379
+      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics,prometheus
+      - LOGGING_LEVEL_ROOT=INFO
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8084/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      - "logging=json"
+      - "service=dummy-service"
+      - "instance=2"
+
+  # ============================================
+  # MONITORING & OBSERVABILITY LAYER
+  # ============================================
+
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: loki
+    hostname: loki
+    networks:
+      - microservices-net
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki_data:/loki
+      - ./infrastructure/monitoring/loki/loki-config.yml:/etc/loki/local-config.yaml
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      - "service=loki"
+
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: promtail
+    hostname: promtail
+    user: root
+    networks:
+      - microservices-net
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./infrastructure/monitoring/promtail/promtail-config.yml:/etc/promtail/config.yml
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    labels:
+      - "service=promtail"
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    hostname: prometheus
+    networks:
+      - microservices-net
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infrastructure/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      - "service=prometheus"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    hostname: grafana
+    networks:
+      - microservices-net
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin123}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infrastructure/monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./infrastructure/monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+    depends_on:
+      - loki
+      - prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      - "service=grafana"

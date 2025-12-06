@@ -1,0 +1,71 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-create-partitioned-urls-table
+      author: gokhan d.
+      changes:
+        - sql:
+            comment: |
+              Create a partitioned 'urls' table for time-based data management.
+              Partitioning by 'created_at' allows for efficient querying and maintenance of large datasets.
+            sql: |
+              CREATE TABLE urls (
+                  id UUID NOT NULL,
+                  version INTEGER NOT NULL,
+                  created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                  deleted BOOLEAN NOT NULL DEFAULT FALSE,
+                  short_code VARCHAR(10) NOT NULL,
+                  original_url VARCHAR(2048) NOT NULL,
+                  expires_at TIMESTAMP WITH TIME ZONE,
+                  click_count BIGINT NOT NULL DEFAULT 0,
+                  CONSTRAINT pk_urls PRIMARY KEY (id, created_at) -- Partition key must be part of the primary key
+              ) PARTITION BY RANGE (created_at);
+
+              -- Create a NON-UNIQUE index for fast lookups by short_code. Uniqueness is handled by the lookup table.
+              CREATE INDEX idx_urls_short_code ON urls (short_code);
+
+              -- Create an index on the partition key for better partition management and range queries
+              CREATE INDEX idx_urls_created_at ON urls (created_at);
+
+        # ---  PARTITIONS (2025 - 2030) ---
+
+        - sql:
+            comment: Create partition for 2025 (up to 2026-01-01)
+            sql: |
+              CREATE TABLE urls_y2025 PARTITION OF urls
+                  FOR VALUES FROM ('2025-01-01T00:00:00Z') TO ('2026-01-01T00:00:00Z');
+
+        - sql:
+            comment: Create partition for 2026 (up to 2027-01-01)
+            sql: |
+              CREATE TABLE urls_y2026 PARTITION OF urls
+                  FOR VALUES FROM ('2026-01-01T00:00:00Z') TO ('2027-01-01T00:00:00Z');
+
+        - sql:
+            comment: Create partition for 2027 (up to 2028-01-01)
+            sql: |
+              CREATE TABLE urls_y2027 PARTITION OF urls
+                  FOR VALUES FROM ('2027-01-01T00:00:00Z') TO ('2028-01-01T00:00:00Z');
+
+        - sql:
+            comment: Create partition for 2028 (up to 2029-01-01)
+            sql: |
+              CREATE TABLE urls_y2028 PARTITION OF urls
+                  FOR VALUES FROM ('2028-01-01T00:00:00Z') TO ('2029-01-01T00:00:00Z');
+
+        - sql:
+            comment: Create partition for 2029 (up to 2030-01-01)
+            sql: |
+              CREATE TABLE urls_y2029 PARTITION OF urls
+                  FOR VALUES FROM ('2029-01-01T00:00:00Z') TO ('2030-01-01T00:00:00Z');
+
+        - sql:
+            comment: Create partition for 2030 (up to 2031-01-01)
+            sql: |
+              CREATE TABLE urls_y2030 PARTITION OF urls
+                  FOR VALUES FROM ('2030-01-01T00:00:00Z') TO ('2031-01-01T00:00:00Z');
+
+        # --- DEFAULT PARTITION ---
+        - sql:
+            comment: Create the default partition for all data falling outside the defined ranges (before 2025 or after 2030).
+            sql: |
+              CREATE TABLE urls_default PARTITION OF urls DEFAULT;

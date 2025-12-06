@@ -1,0 +1,85 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: load-balancer
+
+logging:
+  level:
+    com.example.loadbalancer: DEBUG
+    root: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+
+# Load Balancer Configuration
+loadbalancer:
+  # Global default algorithm (her servis için override edilebilir)
+  algorithm: ROUND_ROBIN  # ROUND_ROBIN, LEAST_CONNECTIONS, IP_HASH, WEIGHTED_ROUND_ROBIN, RANDOM
+
+  # Health check ayarları
+  health-check-enabled: true
+  health-check-interval: 5000  # ms
+  health-check-timeout: 2000   # ms
+
+  # Backend servislerin tanımları
+  services:
+    # Service 1
+    service1:
+      # Bu servis için özel algoritma (opsiyonel)
+      algorithm: ROUND_ROBIN
+      upstreams:
+        - url: http://service1-pod1:8081
+          weight: 1
+          max-connections: 100
+        - url: http://service1-pod2:8082
+          weight: 1
+          max-connections: 100
+
+    # Service 2
+    service2:
+      # Weighted Round Robin kullanarak ilk pod'a daha fazla trafik gönder
+      algorithm: WEIGHTED_ROUND_ROBIN
+      upstreams:
+        - url: http://service2-pod1:8083
+          weight: 3  # 3 kat daha fazla request alacak
+          max-connections: 150
+        - url: http://service2-pod2:8084
+          weight: 1
+          max-connections: 100
+
+  # Circuit Breaker Configuration
+  circuit-breaker:
+    enabled: true
+    failure-threshold: 5         # 5 hata sonrası OPEN
+    success-threshold: 2         # HALF_OPEN'da 2 başarı sonrası CLOSED
+    timeout-seconds: 60          # 60 saniye sonra HALF_OPEN'a geç
+    reset-timeout-seconds: 300   # 5 dakika sonra hata sayacını sıfırla
+
+  # Rate Limiting Configuration
+  rate-limit:
+    enabled: false               # İstenirse açılabilir
+    max-requests: 100            # Window içinde max 100 request
+    window-seconds: 60           # 60 saniyelik window
+    algorithm: TOKEN_BUCKET      # TOKEN_BUCKET veya SLIDING_WINDOW
+
+  # SSL/TLS Configuration
+  ssl:
+    enabled: false               # İstenirse açılabilir
+    https-port: 8443
+    keystore-file: classpath:keystore.p12
+    keystore-password: changeit
+
+  # Sticky Session Configuration
+  sticky-session:
+    enabled: false               # İstenirse açılabilir
+    session-timeout-minutes: 30
+    cookie-name: LB_SESSION_ID

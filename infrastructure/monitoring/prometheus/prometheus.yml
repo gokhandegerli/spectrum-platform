@@ -1,0 +1,23 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'load-balancer'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['load-balancer:8080']
+
+  - job_name: 'kisakes'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['kisakes-app-1:8081', 'kisakes-app-2:8082']
+
+  - job_name: 'dummy-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['dummy-service-1:8083', 'dummy-service-2:8084']

@@ -1,0 +1,80 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: load-balancer
+
+logging:
+  level:
+    com.example.loadbalancer: INFO
+    root: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+loadbalancer:
+  # Global algorithm (can be overridden per service)
+  algorithm: ROUND_ROBIN
+
+  # Health Check
+  health-check-enabled: true
+  health-check-interval: 5000
+  health-check-timeout: 2000
+
+  # Circuit Breaker
+  circuit-breaker:
+    enabled: true
+    failure-threshold: 5
+    success-threshold: 2
+    timeout-seconds: 60
+    reset-timeout-seconds: 300
+
+  # Rate Limiting (disabled by default)
+  rate-limit:
+    enabled: false
+    max-requests: 100
+    window-seconds: 60
+    algorithm: TOKEN_BUCKET
+
+  # SSL (disabled in Docker)
+  ssl:
+    enabled: false
+
+  # Sticky Sessions (optional)
+  sticky-session:
+    enabled: false
+    session-timeout-minutes: 30
+    cookie-name: LB_SESSION_ID
+
+  # Service Definitions
+  services:
+    kisakes:
+      algorithm: ROUND_ROBIN
+      upstreams:
+        - url: http://kisakes-app-1:8081
+          weight: 1
+          max-connections: 100
+        - url: http://kisakes-app-2:8082
+          weight: 1
+          max-connections: 100
+
+    # Dummy Service
+    dummy-service:
+      algorithm: WEIGHTED_ROUND_ROBIN
+      upstreams:
+        - url: http://dummy-service-1:8083
+          weight: 3
+          max-connections: 150
+        - url: http://dummy-service-2:8084
+          weight: 1
+          max-connections: 100
