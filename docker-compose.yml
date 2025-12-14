@@ -30,8 +30,8 @@ services:
     container_name: load-balancer
     hostname: load-balancer
     ports:
-      - "8080:8080"   # HTTP
-      - "8443:8443"   # HTTPS (if SSL enabled)
+      - "80:8080"   # HTTP
+      - "443:8443"   # HTTPS (if SSL enabled)
     environment:
       - SPRING_PROFILES_ACTIVE=docker
       - LOGGING_LEVEL_ROOT=INFO

@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
 @Slf4j
@@ -49,140 +50,194 @@ public class ProxyController {
     long startTime = System.currentTimeMillis();
     String clientIp = getClientIp(request);
 
-    if (properties.getRateLimit().isEnabled()) {
-      if (!rateLimiter.allowRequest(clientIp)) {
-        log.warn("Rate limit exceeded for client: {}", clientIp);
-        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
-            .header("X-RateLimit-Limit",
-                String.valueOf(properties.getRateLimit().getMaxRequests()))
-            .header("X-RateLimit-Remaining", "0")
-            .body("Rate limit exceeded. Please try again later.");
-      }
+    // 1. Rate Limit Check
+    if (isRateLimited(clientIp)) {
+      return createRateLimitResponse();
+    }
+
+    // 2. Server Selection
+    Server server = resolveTargetServer(serviceName, clientIp, request);
+
+    // 3. Circuit Breaker Check
+    if (isCircuitOpen(server)) {
+      return createServiceUnavailableResponse(server);
     }
 
     try {
-      String sessionId = null;
-      if (properties.getStickySession().isEnabled()) {
-        sessionId = getSessionId(request);
-      }
-
-      Server server;
-      if (properties.getStickySession().isEnabled() && sessionId != null) {
-        Server tempServer = serviceRegistry.selectServer(serviceName, clientIp);
-        server = stickySessionManager.getOrAssignServer(sessionId, tempServer);
-      } else {
-        server = serviceRegistry.selectServer(serviceName, clientIp);
-      }
-
-      if (properties.getCircuitBreaker().isEnabled()) {
-        if (!circuitBreaker.isAvailable(server)) {
-          log.warn("Circuit breaker OPEN for server: {}", server.getUrl());
-          return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-              .body("Service temporarily unavailable");
-        }
-      }
-
+      // 4. Prepare Request
       LoadBalancingStrategy strategy = serviceRegistry.getStrategy(serviceName);
       strategy.onRequestStart(server);
 
-      String fullPath = request.getRequestURI();
-      String queryString = request.getQueryString();
-      if (queryString != null) {
-        fullPath += "?" + queryString;
-      }
+      String backendUrl = buildBackendUrl(request, server, serviceName);
+      HttpEntity<String> httpEntity = prepareRequestEntity(request, body, clientIp);
 
-      String backendUrl;
-      String pathSuffix = request.getRequestURI().substring(("/" + serviceName).length());
+      log.info("Proxying: {} {} -> {} (client: {})", request.getMethod(), request.getRequestURI(), backendUrl, clientIp);
 
-      if (pathSuffix.startsWith("/actuator")) {
-        String backendPath = pathSuffix;
-        if (queryString != null) {
-          backendPath += "?" + queryString;
-        }
-        backendUrl = server.getUrl() + backendPath;
-        log.debug("Actuator request detected, stripping service name. New path: {}", backendPath);
-      } else {
-        backendUrl = server.getUrl() + fullPath;
-      }
-
-      log.info("Proxying: {} {} -> {} (client: {})",
-          request.getMethod(),
-          request.getRequestURI(),
-          backendUrl,
-          clientIp);
-
-      HttpHeaders headers = new HttpHeaders();
-      Collections.list(request.getHeaderNames()).forEach(headerName -> {
-        List<String> headerValues = Collections.list(request.getHeaders(headerName));
-        headers.addAll(headerName, headerValues);
-      });
-
-      headers.set("X-Forwarded-For", clientIp);
-      headers.set("X-Forwarded-Proto", request.getScheme());
-      headers.set("X-Forwarded-Host", request.getServerName());
-      headers.set("X-Real-IP", clientIp);
-
-      HttpEntity<String> entity = new HttpEntity<>(body, headers);
-
+      // 5. Execute Request
       ResponseEntity<String> response = restTemplate.exchange(
           backendUrl,
           HttpMethod.valueOf(request.getMethod()),
-          entity,
+          httpEntity,
           String.class);
 
-      long responseTime = System.currentTimeMillis() - startTime;
-      server.updateResponseTime(responseTime);
+      // 6. Handle Success
+      long duration = System.currentTimeMillis() - startTime;
+      handleSuccess(server, serviceName, duration, strategy);
 
-      if (properties.getCircuitBreaker().isEnabled()) {
-        circuitBreaker.recordSuccess(server);
-      }
+      log.info("Response: {} in {}ms from {}", response.getStatusCode(), duration, server.getUrl());
 
-      metrics.recordSuccess(serviceName, responseTime);
-
-      log.info("Response: {} {} in {}ms (backend: {})",
-          response.getStatusCode(),
-          request.getRequestURI(),
-          responseTime,
-          server.getUrl());
-
-      strategy.onRequestComplete(server);
-
-      ResponseEntity.BodyBuilder responseBuilder = ResponseEntity.status(
-          response.getStatusCode()).headers(response.getHeaders());
-
-      if (properties.getStickySession().isEnabled()) {
-        sessionId = getSessionId(request);
-        if (sessionId == null) {
-          sessionId = stickySessionManager.generateSessionId();
-        }
-        responseBuilder.header("Set-Cookie",
-            properties.getStickySession().getCookieName() + "=" + sessionId
-                + "; Path=/; HttpOnly; Max-Age=" + (
-                properties.getStickySession().getSessionTimeoutMinutes() * 60));
-      }
-
-      return responseBuilder.body(response.getBody());
+      return createResponseWithSession(response, request);
 
     } catch (Exception e) {
-      long responseTime = System.currentTimeMillis() - startTime;
+      // 7. Handle Failure
+      long duration = System.currentTimeMillis() - startTime;
+      handleFailure(server, serviceName, duration, e);
 
-      // Circuit breaker - hata
-      if (properties.getCircuitBreaker().isEnabled()) {
-        Server server = serviceRegistry.selectServer(serviceName, clientIp);
-        circuitBreaker.recordFailure(server);
-      }
-
-      // Metrics kaydet
-      metrics.recordError(serviceName, responseTime);
-
-      log.error("Proxy error for {} in {}ms: {}",
-          request.getRequestURI(),
-          responseTime,
-          e.getMessage());
-
-      return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-          .body("Load Balancer Error: " + e.getMessage());
+      return createErrorResponse(e);
     }
+  }
+
+  // --- Helper Methods ---
+
+  private boolean isRateLimited(String clientIp) {
+    if (properties.getRateLimit().isEnabled()) {
+      if (!rateLimiter.allowRequest(clientIp)) {
+        log.warn("Rate limit exceeded for client: {}", clientIp);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private Server resolveTargetServer(String serviceName, String clientIp, HttpServletRequest request) {
+    if (properties.getStickySession().isEnabled()) {
+      String sessionId = getSessionId(request);
+      if (sessionId != null) {
+        Server tempServer = serviceRegistry.selectServer(serviceName, clientIp);
+        return stickySessionManager.getOrAssignServer(sessionId, tempServer);
+      }
+    }
+    return serviceRegistry.selectServer(serviceName, clientIp);
+  }
+
+  private boolean isCircuitOpen(Server server) {
+    if (properties.getCircuitBreaker().isEnabled()) {
+      if (!circuitBreaker.isAvailable(server)) {
+        log.warn("Circuit breaker OPEN for server: {}", server.getUrl());
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private String buildBackendUrl(HttpServletRequest request, Server server, String serviceName) {
+    String fullPath = request.getRequestURI();
+    String queryString = request.getQueryString();
+
+    String pathSuffix = fullPath.substring(("/" + serviceName).length());
+    String backendPath;
+
+    // Actuator Path Stripping Logic
+    if (pathSuffix.startsWith("/actuator")) {
+      backendPath = pathSuffix;
+      log.debug("Actuator request detected, stripping service name. Path: {}", backendPath);
+    } else {
+      backendPath = fullPath;
+    }
+
+    if (queryString != null) {
+      backendPath += "?" + queryString;
+    }
+
+    return server.getUrl() + backendPath;
+  }
+
+  private HttpEntity<String> prepareRequestEntity(HttpServletRequest request, String body, String clientIp) {
+    HttpHeaders headers = new HttpHeaders();
+    Collections.list(request.getHeaderNames()).forEach(headerName -> {
+      List<String> headerValues = Collections.list(request.getHeaders(headerName));
+      headers.addAll(headerName, headerValues);
+    });
+
+    // Standard Proxy Headers
+    headers.set("X-Forwarded-For", clientIp);
+    headers.set("X-Forwarded-Proto", request.getScheme());
+    headers.set("X-Real-IP", clientIp);
+
+    // Port Handling
+    String host = request.getServerName();
+    int port = request.getServerPort();
+    String hostWithPort = (port == 80 || port == 443) ? host : host + ":" + port;
+    headers.set("X-Forwarded-Host", hostWithPort);
+
+    return new HttpEntity<>(body, headers);
+  }
+
+  private void handleSuccess(Server server, String serviceName, long duration, LoadBalancingStrategy strategy) {
+    server.updateResponseTime(duration);
+    metrics.recordSuccess(serviceName, duration);
+    strategy.onRequestComplete(server);
+
+    if (properties.getCircuitBreaker().isEnabled()) {
+      circuitBreaker.recordSuccess(server);
+    }
+  }
+
+  private void handleFailure(Server server, String serviceName, long duration, Exception e) {
+    metrics.recordError(serviceName, duration);
+    log.error("Proxy error for {} in {}ms: {}", server.getUrl(), duration, e.getMessage());
+
+    if (properties.getCircuitBreaker().isEnabled()) {
+      // Re-select server to ensure we are recording failure for the correct instance logic
+      // (Though passing 'server' directly is usually safe here)
+      circuitBreaker.recordFailure(server);
+    }
+  }
+
+  private ResponseEntity<?> createResponseWithSession(ResponseEntity<String> response, HttpServletRequest request) {
+    ResponseEntity.BodyBuilder responseBuilder = ResponseEntity.status(response.getStatusCode())
+        .headers(response.getHeaders());
+
+    if (properties.getStickySession().isEnabled()) {
+      String sessionId = getSessionId(request);
+      if (sessionId == null) {
+        sessionId = stickySessionManager.generateSessionId();
+      }
+      addStickySessionCookie(responseBuilder, sessionId);
+    }
+
+    return responseBuilder.body(response.getBody());
+  }
+
+  private void addStickySessionCookie(ResponseEntity.BodyBuilder responseBuilder, String sessionId) {
+    long maxAge = properties.getStickySession().getSessionTimeoutMinutes() * 60;
+    String cookieValue = String.format("%s=%s; Path=/; HttpOnly; Max-Age=%d",
+        properties.getStickySession().getCookieName(), sessionId, maxAge);
+    responseBuilder.header("Set-Cookie", cookieValue);
+  }
+
+  private ResponseEntity<?> createErrorResponse(Exception e) {
+    HttpStatus status = HttpStatus.BAD_GATEWAY;
+    String message = "Load Balancer Error: " + e.getMessage();
+
+    if (e instanceof HttpStatusCodeException) {
+      status = (HttpStatus) ((HttpStatusCodeException) e).getStatusCode();
+      message = ((HttpStatusCodeException) e).getResponseBodyAsString();
+    }
+
+    return ResponseEntity.status(status).body(message);
+  }
+
+  private ResponseEntity<?> createRateLimitResponse() {
+    return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+        .header("X-RateLimit-Limit", String.valueOf(properties.getRateLimit().getMaxRequests()))
+        .header("X-RateLimit-Remaining", "0")
+        .body("Rate limit exceeded. Please try again later.");
+  }
+
+  private ResponseEntity<?> createServiceUnavailableResponse(Server server) {
+    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+        .body("Service temporarily unavailable: " + server.getUrl());
   }
 
   private String getSessionId(HttpServletRequest request) {
