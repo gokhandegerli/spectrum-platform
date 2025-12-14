@@ -1,0 +1,537 @@
+{
+	"info": {
+		"_postman_id": "32e9c2c7-45df-4f1f-a912-5ad7c82d3cec",
+		"name": "Spectrum Platform API",
+		"description": "Complete API collection for Spectrum Platform",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "24095631"
+	},
+	"item": [
+		{
+			"name": "1. Health Checks",
+			"item": [
+				{
+					"name": "Load Balancer Health",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/actuator/health",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"actuator",
+								"health"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Kisakes Health (via LB)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/kisakes/actuator/health",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"kisakes",
+								"actuator",
+								"health"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Dummy Service Health (via LB)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/dummy-service/actuator/health",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"dummy-service",
+								"actuator",
+								"health"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "2. Admin API",
+			"item": [
+				{
+					"name": "Service Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/admin/status",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"admin",
+								"status"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Features Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/admin/features",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"admin",
+								"features"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Circuit Breaker Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/admin/circuit-breaker/status",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"admin",
+								"circuit-breaker",
+								"status"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Service Details",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/admin/services/kisakes",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"admin",
+								"services",
+								"kisakes"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Change Algorithm",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"algorithm\": \"LEAST_CONNECTIONS\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/admin/services/kisakes/algorithm",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"admin",
+								"services",
+								"kisakes",
+								"algorithm"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "3. Kisakes Service (URL Shortener)",
+			"item": [
+				{
+					"name": "Create Short URL",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"// Yanıt gövdesini JSON olarak ayrıştır",
+									"var responseJson = pm.response.json();",
+									"",
+									"// shortUrl değerini al",
+									"var shortUrl = responseJson.shortUrl;",
+									"",
+									"// URL'deki son kısmı (short code) ayıklamak için",
+									"// URL'yi '/' karakterine göre böleriz ve son elemanı alırız.",
+									"var parts = shortUrl.split('/');",
+									"",
+									"// parts dizisinin son elemanı (kısa kod)",
+									"var shortCode = parts[parts.length - 1];",
+									"",
+									"// Elde edilen short code değerini bir ortam değişkenine (environment variable) kaydet",
+									"// 'short_code' adlı değişkeni kullanıyoruz.",
+									"pm.collectionVariables.set(\"short_code\", shortCode);",
+									"",
+									"// Kontrol amaçlı console'a yazdırma",
+									"console.log(\"Alınan shortUrl: \" + shortUrl);",
+									"console.log(\"Ayıklanan short_code: \" + shortCode);",
+									"",
+									"// İsteğe bağlı: Kodun doğru çalıştığını kontrol eden bir test ekleyebilirsiniz.",
+									"pm.test(\"Short Code başarıyla ayıklandı ve kaydedildi\", function () {",
+									"    pm.expect(shortCode).to.be.a('string').and.to.have.lengthOf.above(0);",
+									"    pm.expect(pm.environment.get(\"short_code\")).to.equal(shortCode);",
+									"});"
+								],
+								"type": "text/javascript",
+								"packages": {},
+								"requests": {}
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"originalUrl\": \"https://www.google.com\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/kisakes/api/v1/urls",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"kisakes",
+								"api",
+								"v1",
+								"urls"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Redirect to Original URL",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/kisakes/{{short_code}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"kisakes",
+								"{{short_code}}"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "4. Dummy Service (Test Endpoints)",
+			"item": [
+				{
+					"name": "Hello",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/dummy-service/api/v1/hello",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"dummy-service",
+								"api",
+								"v1",
+								"hello"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Info",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/dummy-service/api/v1/info",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"dummy-service",
+								"api",
+								"v1",
+								"info"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Random Quote",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/dummy-service/api/v1/quote",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"dummy-service",
+								"api",
+								"v1",
+								"quote"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Sample Data",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/dummy-service/api/v1/data",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"dummy-service",
+								"api",
+								"v1",
+								"data"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Echo (POST)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"message\": \"Hello from Postman\",\n  \"timestamp\": \"2024-12-07T10:00:00Z\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/dummy-service/api/v1/echo",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"dummy-service",
+								"api",
+								"v1",
+								"echo"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Slow Endpoint (2s delay)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/dummy-service/api/v1/slow",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"dummy-service",
+								"api",
+								"v1",
+								"slow"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Fast Endpoint",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/dummy-service/api/v1/fast",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"dummy-service",
+								"api",
+								"v1",
+								"fast"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/dummy-service/api/v1/status",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"dummy-service",
+								"api",
+								"v1",
+								"status"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "5. Load Balancing Tests",
+			"item": [
+				{
+					"name": "Test Round Robin (10x)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has instance field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('instance');",
+									"    console.log('Instance:', jsonData.instance);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/dummy-service/hello",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"dummy-service",
+								"hello"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "6. Metrics",
+			"item": [
+				{
+					"name": "Prometheus Metrics",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/actuator/prometheus",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"actuator",
+								"prometheus"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Health Metrics",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/actuator/metrics",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"actuator",
+								"metrics"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost"
+		},
+		{
+			"key": "short_code",
+			"value": ""
+		}
+	]
+}
