@@ -91,7 +91,19 @@ public class ProxyController {
         fullPath += "?" + queryString;
       }
 
-      String backendUrl = server.getUrl() + fullPath;
+      String backendUrl;
+      String pathSuffix = request.getRequestURI().substring(("/" + serviceName).length());
+
+      if (pathSuffix.startsWith("/actuator")) {
+        String backendPath = pathSuffix;
+        if (queryString != null) {
+          backendPath += "?" + queryString;
+        }
+        backendUrl = server.getUrl() + backendPath;
+        log.debug("Actuator request detected, stripping service name. New path: {}", backendPath);
+      } else {
+        backendUrl = server.getUrl() + fullPath;
+      }
 
       log.info("Proxying: {} {} -> {} (client: {})",
           request.getMethod(),

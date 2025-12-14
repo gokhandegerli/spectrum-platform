@@ -2,24 +2,15 @@ package com.degerli.dummyservice;
 
 import java.net.InetAddress;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @SpringBootApplication
 @RestController
-@RequestMapping("/dummy-service/api/v1")
+@RequestMapping("/dummy-service")
 public class DummyServiceApplication {
 
   private static final AtomicLong requestCounter = new AtomicLong(0);
@@ -43,12 +34,12 @@ public class DummyServiceApplication {
     SpringApplication.run(DummyServiceApplication.class, args);
   }
 
-  @GetMapping("/hello")
+  @GetMapping("/api/v1/hello")  // ← Tam path: /dummy-service/api/v1/hello
   public Map<String, Object> hello() {
     return createResponse("Hello from Dummy Service!");
   }
 
-  @GetMapping("/info")
+  @GetMapping("/api/v1/info")
   public Map<String, Object> getInfo() {
     Map<String, Object> response = createResponse("Dummy Service Information");
     response.put("version", "1.0.0");
@@ -57,7 +48,7 @@ public class DummyServiceApplication {
     return response;
   }
 
-  @GetMapping("/quote")
+  @GetMapping("/api/v1/quote")
   public Map<String, Object> getRandomQuote() {
     Random random = new Random();
     String quote = quotes.get(random.nextInt(quotes.size()));
@@ -67,11 +58,10 @@ public class DummyServiceApplication {
     return response;
   }
 
-  @GetMapping("/data")
+  @GetMapping("/api/v1/data")
   public Map<String, Object> getData() {
     Map<String, Object> response = createResponse("Sample Data");
 
-    // Sample data
     List<Map<String, Object>> items = new ArrayList<>();
     for (int i = 1; i <= 5; i++) {
       Map<String, Object> item = new HashMap<>();
@@ -86,39 +76,39 @@ public class DummyServiceApplication {
     return response;
   }
 
-  @PostMapping("/echo")
-  public Map<String, Object> echo(
-      @RequestBody
-      Map<String, Object> payload) {
+  @PostMapping("/api/v1/echo")
+  public Map<String, Object> echo(@RequestBody Map<String, Object> payload) {
     Map<String, Object> response = createResponse("Echo Response");
     response.put("receivedPayload", payload);
     response.put("payloadSize", payload.size());
     return response;
   }
 
-  @GetMapping("/slow")
+  @GetMapping("/api/v1/slow")
   public Map<String, Object> slowEndpoint() {
     try {
-      Thread.sleep(2000); // Simulate slow operation
+      Thread.sleep(2000);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }
     return createResponse("Slow response completed");
   }
 
-  @GetMapping("/fast")
+  @GetMapping("/api/v1/fast")
   public Map<String, Object> fastEndpoint() {
     return createResponse("Fast response");
   }
 
-  @GetMapping("/status")
+  @GetMapping("/api/v1/status")
   public Map<String, Object> getStatus() {
     Map<String, Object> response = createResponse("Service Status");
 
     Runtime runtime = Runtime.getRuntime();
-    response.put("memory", Map.of("total", runtime.totalMemory() / 1024 / 1024 + " MB", "free",
-        runtime.freeMemory() / 1024 / 1024 + " MB", "used",
-        (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024 + " MB"));
+    response.put("memory", Map.of(
+        "total", runtime.totalMemory() / 1024 / 1024 + " MB",
+        "free", runtime.freeMemory() / 1024 / 1024 + " MB",
+        "used", (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024 + " MB"
+    ));
     response.put("processors", runtime.availableProcessors());
     response.put("uptime", getUptime());
 
@@ -127,8 +117,11 @@ public class DummyServiceApplication {
 
   @GetMapping("/health")
   public Map<String, String> health() {
-    return Map.of("status", "UP", "instance", instanceId, "timestamp",
-        LocalDateTime.now().toString());
+    return Map.of(
+        "status", "UP",
+        "instance", instanceId,
+        "timestamp", LocalDateTime.now().toString()
+    );
   }
 
   private Map<String, Object> createResponse(String message) {
@@ -146,8 +139,7 @@ public class DummyServiceApplication {
     long seconds = uptimeMillis / 1000;
     long minutes = seconds / 60;
     long hours = minutes / 60;
-    return String.format("%d hours, %d minutes, %d seconds", hours, minutes % 60,
-        seconds % 60);
+    return String.format("%d hours, %d minutes, %d seconds", hours, minutes % 60, seconds % 60);
   }
 
   private static final long startTime = System.currentTimeMillis();
