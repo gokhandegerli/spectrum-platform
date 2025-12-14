@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @SpringBootApplication
 @RestController
-@RequestMapping("/dummy-service")
+@RequestMapping("/dummy-service/api/v1")
 public class DummyServiceApplication {
 
   private static final AtomicLong requestCounter = new AtomicLong(0);
