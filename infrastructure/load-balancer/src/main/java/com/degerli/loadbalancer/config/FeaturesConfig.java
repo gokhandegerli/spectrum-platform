@@ -1,6 +1,5 @@
 package com.degerli.loadbalancer.config;
 
-import com.degerli.loadbalancer.LoadBalancerProperties;
 import com.degerli.loadbalancer.circuitbreaker.CircuitBreaker;
 import com.degerli.loadbalancer.ratelimit.RateLimiter;
 import com.degerli.loadbalancer.session.StickySessionManager;

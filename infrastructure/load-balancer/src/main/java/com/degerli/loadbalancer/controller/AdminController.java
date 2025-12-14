@@ -1,7 +1,7 @@
 package com.degerli.loadbalancer.controller;
 
-import com.degerli.loadbalancer.LoadBalancerProperties;
-import com.degerli.loadbalancer.LoadBalancerProperties.Algorithm;
+import com.degerli.loadbalancer.config.LoadBalancerProperties;
+import com.degerli.loadbalancer.config.LoadBalancerProperties.Algorithm;
 import com.degerli.loadbalancer.circuitbreaker.CircuitBreaker;
 import com.degerli.loadbalancer.model.Server;
 import com.degerli.loadbalancer.ratelimit.RateLimiter;

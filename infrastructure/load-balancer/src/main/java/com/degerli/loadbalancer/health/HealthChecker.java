@@ -1,6 +1,6 @@
 package com.degerli.loadbalancer.health;
 
-import com.degerli.loadbalancer.LoadBalancerProperties;
+import com.degerli.loadbalancer.config.LoadBalancerProperties;
 import com.degerli.loadbalancer.model.Server;
 import java.time.LocalDateTime;
 import java.util.concurrent.Executors;

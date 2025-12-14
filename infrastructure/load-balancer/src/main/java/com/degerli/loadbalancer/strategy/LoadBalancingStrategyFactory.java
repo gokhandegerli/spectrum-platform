@@ -1,6 +1,6 @@
 package com.degerli.loadbalancer.strategy;
 
-import com.degerli.loadbalancer.LoadBalancerProperties.Algorithm;
+import com.degerli.loadbalancer.config.LoadBalancerProperties.Algorithm;
 import org.springframework.stereotype.Component;
 
 /**

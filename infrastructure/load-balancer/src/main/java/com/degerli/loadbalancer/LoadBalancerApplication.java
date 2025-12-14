@@ -1,5 +1,6 @@
 package com.degerli.loadbalancer;
 
+import com.degerli.loadbalancer.config.LoadBalancerProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;

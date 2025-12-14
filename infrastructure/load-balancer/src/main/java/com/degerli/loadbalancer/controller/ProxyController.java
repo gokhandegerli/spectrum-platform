@@ -1,6 +1,6 @@
 package com.degerli.loadbalancer.controller;
 
-import com.degerli.loadbalancer.LoadBalancerProperties;
+import com.degerli.loadbalancer.config.LoadBalancerProperties;
 import com.degerli.loadbalancer.circuitbreaker.CircuitBreaker;
 import com.degerli.loadbalancer.metrics.LoadBalancerMetrics;
 import com.degerli.loadbalancer.model.Server;
