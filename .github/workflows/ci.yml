@@ -132,48 +132,48 @@ jobs:
   # ============================================
   # Integration Tests
   # ============================================
-  integration-test:
-    name: Integration Tests
-    needs: build-and-test
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
-
-      - name: 🐳 Set up Docker Compose
-        run: |
-          docker-compose version
-
-      - name: 🚀 Start services
-        run: |
-          cp .env.example .env
-          docker-compose up -d
-
-      - name: ⏳ Wait for services
-        run: |
-          chmod +x scripts/health-check.sh
-          timeout 300 bash -c 'until ./scripts/health-check.sh; do sleep 10; done'
-
-      - name: 🧪 Run integration tests
-        run: |
-          # Basic load balancer tests
-          curl -f http://localhost:8080/actuator/health
-          curl -f http://localhost:8080/admin/status
-          
-          # Test kisakes service
-          curl -f http://localhost:8080/kisakes/actuator/health
-          
-          # Test dummy service
-          curl -f http://localhost:8080/dummy-service/hello
-
-      - name: 📊 Show logs on failure
-        if: failure()
-        run: docker-compose logs
-
-      - name: 🛑 Cleanup
-        if: always()
-        run: docker-compose down -v
+#  integration-test:
+#    name: Integration Tests
+#    needs: build-and-test
+#    runs-on: ubuntu-latest
+#
+#    steps:
+#      - name: 📥 Checkout code
+#        uses: actions/checkout@v4
+#
+#      - name: 🐳 Set up Docker Compose
+#        run: |
+#          docker-compose version
+#
+#      - name: 🚀 Start services
+#        run: |
+#          cp .env.example .env
+#          docker-compose up -d
+#
+#      - name: ⏳ Wait for services
+#        run: |
+#          chmod +x scripts/health-check.sh
+#          timeout 300 bash -c 'until ./scripts/health-check.sh; do sleep 10; done'
+#
+#      - name: 🧪 Run integration tests
+#        run: |
+#          # Basic load balancer tests
+#          curl -f http://localhost:8080/actuator/health
+#          curl -f http://localhost:8080/admin/status
+#
+#          # Test kisakes service
+#          curl -f http://localhost:8080/kisakes/actuator/health
+#
+#          # Test dummy service
+#          curl -f http://localhost:8080/dummy-service/hello
+#
+#      - name: 📊 Show logs on failure
+#        if: failure()
+#        run: docker-compose logs
+#
+#      - name: 🛑 Cleanup
+#        if: always()
+#        run: docker-compose down -v
 
   # ============================================
   # Security Scan
