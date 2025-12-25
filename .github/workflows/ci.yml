@@ -236,7 +236,8 @@ jobs:
   # ============================================
   notify:
     name: Notify Results
-    needs: [build-and-test, integration-test, security-scan]
+#    needs: [build-and-test, integration-test, security-scan]
+    needs: [build-and-test, security-scan]
     runs-on: ubuntu-latest
     if: always()
 
