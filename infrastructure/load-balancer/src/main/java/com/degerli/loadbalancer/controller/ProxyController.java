@@ -11,6 +11,7 @@ import com.degerli.loadbalancer.strategy.LoadBalancingStrategy;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpEntity;
@@ -38,6 +39,10 @@ public class ProxyController {
   private final RateLimiter rateLimiter;
   private final StickySessionManager stickySessionManager;
   private final LoadBalancerMetrics metrics;
+  private static final Set<String> HOP_BY_HOP_HEADERS = Set.of(
+      "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+      "te", "trailer", "transfer-encoding", "upgrade"
+  );
 
   @RequestMapping(value = "/{serviceName}/**",
       method = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE,
@@ -195,8 +200,14 @@ public class ProxyController {
   }
 
   private ResponseEntity<?> createResponseWithSession(ResponseEntity<String> response, HttpServletRequest request) {
-    ResponseEntity.BodyBuilder responseBuilder = ResponseEntity.status(response.getStatusCode())
-        .headers(response.getHeaders());
+    ResponseEntity.BodyBuilder responseBuilder = ResponseEntity.status(response.getStatusCode());
+
+    // Filter out hop-by-hop headers
+    response.getHeaders().forEach((key, value) -> {
+      if (!HOP_BY_HOP_HEADERS.contains(key.toLowerCase())) {
+        responseBuilder.header(key, value.toArray(new String[0]));
+      }
+    });
 
     if (properties.getStickySession().isEnabled()) {
       String sessionId = getSessionId(request);
