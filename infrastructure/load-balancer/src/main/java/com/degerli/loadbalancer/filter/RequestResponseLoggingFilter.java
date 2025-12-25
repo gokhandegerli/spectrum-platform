@@ -1,6 +1,8 @@
 package com.degerli.loadbalancer.filter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import jakarta.servlet.Filter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -28,7 +30,8 @@ import org.springframework.web.util.ContentCachingResponseWrapper;
 @Component
 public class RequestResponseLoggingFilter implements Filter {
 
-  private final ObjectMapper objectMapper = new ObjectMapper();
+  private final ObjectMapper objectMapper = new ObjectMapper().registerModule(
+      new JavaTimeModule()).disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
   private final Set<String> excludePaths = Set.of("/actuator", "/admin/status");
 
   @Override
