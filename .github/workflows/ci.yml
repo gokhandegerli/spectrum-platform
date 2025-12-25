@@ -11,6 +11,10 @@ env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: spectrum-platform
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   # ============================================
   # Build and Test
