@@ -11,7 +11,10 @@ import java.security.SecureRandom;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,6 +31,12 @@ public class UrlServiceImpl implements UrlService {
   private final UrlRepository urlRepository;
   private final ShortCodeLookupRepository shortCodeLookupRepository;
 
+  // SELF-INJECTION: Proxy'nin devreye girmesi için kendisini inject ediyoruz.
+  // @Lazy kullanıyoruz ki Circular Dependency hatası almayalım.
+  @Autowired
+  @Lazy
+  private UrlServiceImpl self;
+
   @Override
   @Transactional
   public Url createShortUrl(UrlCreateRequest request) {
@@ -39,18 +48,47 @@ public class UrlServiceImpl implements UrlService {
     Url url = new Url();
     url.setOriginalUrl(request.originalUrl());
     url.setShortCode(uniqueShortCode);
+    url.setClickCount(0L);
 
     return urlRepository.save(url);
   }
 
   @Override
-  @Cacheable(value = "urls",
-      key = "'url:' + #shortCode")
   public String getOriginalUrl(String shortCode) {
+    // 1. URL'i getir (Cache mekanizması burada çalışır)
+    // 'this' yerine 'self' kullanıyoruz ki @Cacheable devreye girsin.
+    String originalUrl = self.findUrlCached(shortCode);
+
+    // 2. Sayacı artır (Asenkron olarak arka planda çalışır)
+    // Kullanıcı redirect olurken biz arkada DB güncelliyoruz.
+    try {
+      self.incrementClickCount(shortCode);
+    } catch (Exception e) {
+      log.error("Error incrementing click count for {}: {}", shortCode, e.getMessage());
+      // Sayaç hatası redirect'i engellememeli, o yüzden try-catch
+    }
+
+    return originalUrl;
+  }
+
+  // --- YARDIMCI METODLAR (PUBLIC OLMALI) ---
+
+  @Cacheable(value = "urls", key = "'url:' + #shortCode")
+  public String findUrlCached(String shortCode) {
     log.info("Cache MISS: Veritabanından getiriliyor: {}", shortCode);
     Url url = urlRepository.findByShortCode(shortCode)
         .orElseThrow(() -> new UrlNotFoundException(shortCode));
     return url.getOriginalUrl();
+  }
+
+  @Async // <-- Bu metod ayrı bir thread'de çalışır
+  @Transactional
+  public void incrementClickCount(String shortCode) {
+    urlRepository.findByShortCode(shortCode).ifPresent(url -> {
+      url.setClickCount(url.getClickCount() + 1);
+      urlRepository.save(url);
+      log.debug("Async click count incremented for: {}", shortCode);
+    });
   }
 
   private String generateUniqueShortCode() {
