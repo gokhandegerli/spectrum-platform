@@ -1,0 +1,22 @@
+tunnel: 19ab5f1f-a391-4e50-aaed-9e4075ed465c
+credentials-file: /etc/cloudflared/cert.json
+
+ingress:
+  # Load Balancer (Uygulaman)
+  - hostname: api.degerli.store
+    service: http://load-balancer:8080
+  
+  # Uptime Kuma (Monitoring)
+  - hostname: monitor.degerli.store
+    service: http://uptime-kuma:3001
+  
+  # Dozzle (Loglar)
+  - hostname: logs.degerli.store
+    service: http://dozzle:8080
+  
+  # Adminer (Veritabanı)
+  - hostname: db.degerli.store
+    service: http://adminer:8080
+  
+  # Eşleşmeyen her şeyi 404'e at
+  - service: http_status:404

@@ -8,33 +8,80 @@ networks:
 volumes:
   postgres_data:
     name: postgres_data
-  grafana_data:
-    name: grafana_data
-  loki_data:
-    name: loki_data
   redis_data:
     name: redis_data
-  prometheus_data:
-    name: prometheus_data
+  uptime_kuma_data:
+    name: uptime_kuma_data
 
 services:
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared-tunnel
+    restart: unless-stopped
+    command: tunnel run
+    volumes:
+      - ./cloudflared/config.yml:/etc/cloudflared/config.yml
+      # ARTIK ROOT DEĞİL, PROJE İÇİNDEN ALIYORUZ:
+      - ./cloudflared/cert.json:/etc/cloudflared/cert.json
+    networks:
+      - microservices-net
+
+
+  # ============================================
+  # MANAGEMENT & UTILITY LAYER
+  # ============================================
+  
+  # Logları tarayıcıdan izle (http://IP:8888) - LB testi için çok işine yarayacak
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: dozzle
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - 8888:8080
+    networks:
+      - microservices-net
+
+  # Servisleri monitor et (http://IP:3001)
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: uptime-kuma
+    restart: always
+    volumes:
+      - uptime_kuma_data:/app/data
+    ports:
+      - 3001:3001
+    networks:
+      - microservices-net
+
+  # DB Yönetimi (http://IP:8090)
+  adminer:
+    image: adminer
+    container_name: adminer
+    restart: always
+    ports:
+      - 8090:8080
+    networks:
+      - microservices-net
+
   # ============================================
   # INFRASTRUCTURE LAYER
   # ============================================
 
-  # Load Balancer (Reverse Proxy)
   load-balancer:
-    build:
-      context: .
-      dockerfile: infrastructure/load-balancer/Dockerfile
+    image: ghcr.io/gokhandegerli/spectrum-platform/load-balancer:master
     container_name: load-balancer
     hostname: load-balancer
     ports:
-      - "80:8080"   # HTTP
-      - "443:8443"   # HTTPS (if SSL enabled)
+      - "8080:8080"
     environment:
       - SPRING_PROFILES_ACTIVE=docker
       - LOGGING_LEVEL_ROOT=INFO
+      - SERVER_PORT=8080
+      # RAM KORUMASI: Max 256MB
+      - JAVA_TOOL_OPTIONS=-Xms128m -Xmx256m
     networks:
       - microservices-net
     depends_on:
@@ -74,7 +121,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./infrastructure/databases/postgres/init-scripts:/docker-entrypoint-initdb.d
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql 
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin}"]
       interval: 5s
@@ -107,9 +154,7 @@ services:
   # ============================================
 
   kisakes-app-1:
-    build:
-      context: .
-      dockerfile: services/kisakes/Dockerfile
+    image: ghcr.io/gokhandegerli/spectrum-platform/kisakes:master
     container_name: kisakes-app-1
     hostname: kisakes-app-1
     networks:
@@ -135,6 +180,8 @@ services:
       - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics,prometheus
       - MANAGEMENT_TRACING_ENABLED=true
       - LOGGING_LEVEL_ROOT=INFO
+      # RAM KORUMASI
+      - JAVA_TOOL_OPTIONS=-Xms128m -Xmx256m
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
       interval: 10s
@@ -147,9 +194,7 @@ services:
       - "instance=1"
 
   kisakes-app-2:
-    build:
-      context: .
-      dockerfile: services/kisakes/Dockerfile
+    image: ghcr.io/gokhandegerli/spectrum-platform/kisakes:master
     container_name: kisakes-app-2
     hostname: kisakes-app-2
     networks:
@@ -175,6 +220,8 @@ services:
       - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics,prometheus
       - MANAGEMENT_TRACING_ENABLED=true
       - LOGGING_LEVEL_ROOT=INFO
+      # RAM KORUMASI
+      - JAVA_TOOL_OPTIONS=-Xms128m -Xmx256m
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
       interval: 10s
@@ -191,9 +238,7 @@ services:
   # ============================================
 
   dummy-service-1:
-    build:
-      context: .
-      dockerfile: services/dummy-service/Dockerfile
+    image: ghcr.io/gokhandegerli/spectrum-platform/dummy-service:master
     container_name: dummy-service-1
     hostname: dummy-service-1
     networks:
@@ -206,6 +251,8 @@ services:
       - SPRING_APPLICATION_NAME=dummy-service
       - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics,prometheus
       - LOGGING_LEVEL_ROOT=INFO
+      # RAM KORUMASI
+      - JAVA_TOOL_OPTIONS=-Xms128m -Xmx256m
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8083/actuator/health"]
       interval: 10s
@@ -218,9 +265,7 @@ services:
       - "instance=1"
 
   dummy-service-2:
-    build:
-      context: .
-      dockerfile: services/dummy-service/Dockerfile
+    image: ghcr.io/gokhandegerli/spectrum-platform/dummy-service:master
     container_name: dummy-service-2
     hostname: dummy-service-2
     networks:
@@ -233,6 +278,8 @@ services:
       - SPRING_APPLICATION_NAME=dummy-service
       - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics,prometheus
       - LOGGING_LEVEL_ROOT=INFO
+      # RAM KORUMASI
+      - JAVA_TOOL_OPTIONS=-Xms128m -Xmx256m
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8084/actuator/health"]
       interval: 10s
@@ -243,93 +290,3 @@ services:
       - "logging=json"
       - "service=dummy-service"
       - "instance=2"
-
-  # ============================================
-  # MONITORING & OBSERVABILITY LAYER
-  # ============================================
-
-  loki:
-    image: grafana/loki:2.9.0
-    user: "0"
-    container_name: loki
-    hostname: loki
-    networks:
-      - microservices-net
-    ports:
-      - "3100:3100"
-    command: -config.file=/etc/loki/local-config.yaml
-    volumes:
-      - loki_data:/loki
-      - ./infrastructure/monitoring/loki/loki-config.yml:/etc/loki/local-config.yaml
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3100/ready"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    labels:
-      - "service=loki"
-
-  promtail:
-    image: grafana/promtail:2.9.0
-    container_name: promtail
-    hostname: promtail
-    user: root
-    networks:
-      - microservices-net
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./infrastructure/monitoring/promtail/promtail-config.yml:/etc/promtail/config.yml
-    command: -config.file=/etc/promtail/config.yml
-    depends_on:
-      - loki
-    labels:
-      - "service=promtail"
-
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
-    hostname: prometheus
-    networks:
-      - microservices-net
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./infrastructure/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    labels:
-      - "service=prometheus"
-
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    hostname: grafana
-    networks:
-      - microservices-net
-    environment:
-      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin123}
-      - GF_USERS_ALLOW_SIGN_UP=false
-    ports:
-      - "3000:3000"
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./infrastructure/monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
-      - ./infrastructure/monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
-    depends_on:
-      - loki
-      - prometheus
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    labels:
-      - "service=grafana"
